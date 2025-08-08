@@ -85,7 +85,7 @@ Open `index.html` in your browser. **Prepare snacks** 🍿.
 
 ## 🎥 Project Demo  
 
-**Video:** [Add link here]  
+**Video:**[https://drive.google.com/file/d/1PZyiBC6YsSOcloEDUpT4eBKQK-u32r58/view?usp=sharing]
 *Watch in real-time as your ETA goes from 10 minutes ⏳ to "better pack dinner" 🍛.*  
 
 ---
