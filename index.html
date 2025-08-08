@@ -2,273 +2,572 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Valanja Vazhi Maps 🗺️</title>
+  <title>Valanja Vazhi — Valanja Vazhi Maps 🗺️</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
   <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet" />
   <style>
-    body { margin:0; padding:0; }
-    #map { width: 100%; height: 90vh; }
+    html,body { height:100%; margin:0; }
+    #map { position: absolute; right:0; top:64px; bottom:0; width: calc(100% - 360px); }
+    #leftPanel { position: absolute; left:0; top:64px; bottom:0; width:360px; overflow:auto; background: #0f172a; color: #e6eef8; }
+    header { position: fixed; left:0; right:0; top:0; height:64px; background: #0b1220; display:flex; align-items:center; gap:12px; padding:8px 16px; z-index:10; }
+    .input, .btn { font-size:14px; }
+    .mapboxgl-popup-content { color: #111827; }
+    .chip { background: rgba(255,255,255,0.06); padding:6px 10px; border-radius:999px; }
+    .fun-msg { font-weight:600; color:#e0f2fe; }
+    .vehicle-marker { width:36px; height:36px; display:block; }
+    /* Responsive */
+    @media (max-width:900px){
+      #leftPanel { position:relative; width:100%; height: 260px; top:64px; bottom:auto; }
+      #map { top: 324px; width:100%; height: calc(100% - 324px); left:0; }
+    }
   </style>
 </head>
-<body class="bg-gray-900 text-white">
-  <h1 class="text-2xl font-bold text-center py-3">Valanja Vazhi Maps 🐌</h1>
+<body class="bg-slate-900 text-white">
 
-  <!-- Mode Selector -->
-  <div class="flex justify-center gap-2 my-2">
-    <select id="mode" class="text-black p-2 rounded">
-      <option value="normal">🚗 Normal Mode</option>
-      <option value="snail">🐌 Snail Mode</option>
-      <option value="tractor">🚜 Tractor Mode</option>
-      <option value="looping">🌀 Looping Mode</option>
-    </select>
-    <input id="search" type="text" placeholder="Search place..." class="text-black p-2 rounded w-60" />
-    <button id="go" class="bg-green-500 px-3 rounded">Go</button>
+  <header>
+    <div class="flex items-center gap-3 w-full">
+      <div class="flex items-center gap-3">
+        <div class="text-xl font-bold">Valanja Vazhi</div>
+        <div class="chip">🐌 Maps</div>
+      </div>
+
+      <div class="flex ml-4 gap-2 items-center">
+        <select id="mode" class="input p-2 rounded text-black">
+          <option value="normal">🚗 Normal</option>
+          <option value="snail">🐌 Snail</option>
+          <option value="tractor">🚜 Tractor</option>
+          <option value="looping">🌀 Looping</option>
+        </select>
+
+        <input id="search" class="input p-2 rounded w-80" placeholder="Where to? (city, place or address)" />
+        <button id="go" class="btn bg-emerald-500 px-3 py-2 rounded hover:bg-emerald-600">Go</button>
+
+        <button id="saveFav" title="Save this route" class="btn bg-yellow-500 px-3 py-2 rounded hover:bg-yellow-600">★</button>
+      </div>
+
+      <div class="ml-auto flex items-center gap-3">
+        <div id="etaSmall" class="chip hidden"></div>
+      </div>
+    </div>
+  </header>
+
+  <div id="leftPanel" class="p-4">
+    <div class="mb-3">
+      <div class="text-sm text-slate-300">Route info</div>
+      <div id="etaBox" class="mt-2 p-3 rounded bg-slate-800">
+        <div id="distance" class="text-lg font-semibold">— km</div>
+        <div id="eta" class="text-sm text-slate-300">ETA —</div>
+        <div id="funMessage" class="fun-msg mt-2">Enter a destination and hit Go! 🚦</div>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <div class="flex items-center justify-between">
+        <div class="text-sm text-slate-300">Directions / Steps</div>
+        <button id="toggleSteps" class="text-xs text-emerald-400">Refresh</button>
+      </div>
+      <div id="steps" class="mt-2 p-2 rounded bg-slate-800 min-h-[120px] text-sm text-slate-200 overflow-auto"></div>
+    </div>
+
+    <div class="mb-3">
+      <div class="text-sm text-slate-300">Favorites</div>
+      <div id="favorites" class="mt-2 p-2 rounded bg-slate-800 text-sm"></div>
+    </div>
+
+    <div class="mb-3">
+      <div class="text-sm text-slate-400">Notes</div>
+      <ul class="text-xs text-slate-300 mt-2">
+        <li>• Snail mode detours to scenic towns (30km-ish or special chains).</li>
+        <li>• Caches routes locally for offline fallback & cost savings.</li>
+        <li>• Only start (blue) and destination (red) pins shown.</li>
+      </ul>
+    </div>
   </div>
 
   <div id="map"></div>
 
-  <script>
-    mapboxgl.accessToken = 'pk.eyJ1Ijoic2FtdWVsbWRpbGVlcCIsImEiOiJjbWN0Mjd4a2cwMG92MmpxdXo3cDlveTlsIn0.QLTaJV0psYYAr9jpJeZjUw';
+<script>
+/* =======================
+   Config & token
+   ======================= */
+mapboxgl.accessToken = 'pk.eyJ1Ijoic2FtdWVsbWRpbGVlcCIsImEiOiJjbWN0Mjd4a2cwMG92MmpxdXo3cDlveTlsIn0.QLTaJV0psYYAr9jpJeZjUw';
 
-    const map = new mapboxgl.Map({
-      container: 'map',
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [76.2673, 9.9312],
-      zoom: 13
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/streets-v12',
+  center: [76.2673, 9.9312],
+  zoom: 12
+});
+map.addControl(new mapboxgl.NavigationControl());
+
+/* -----------------------
+   State
+   ----------------------- */
+let userMarker = null;
+let destMarker = null;
+let routeLayerId = 'valanja-route';
+let lastRouteInfo = null; // store current route response
+let favorites = JSON.parse(localStorage.getItem('valanja.favs') || '[]');
+
+let vehicle = {
+  marker: null,
+  animId: null,
+  playing: false
+};
+
+/* -----------------------
+   Major places map (lng,lat)
+   ----------------------- */
+const majorPlaces = {
+  Perumbavoor: [76.5446, 10.1071],
+  Muvattupuzha: [76.6017, 9.9589],
+  Kolenchery: [76.5143, 10.0621],
+  Aluva: [76.3940, 10.1070],
+  Kothamangalam: [76.5850, 10.1133],
+  Thodupuzha: [76.7167, 9.8792],
+  Pala: [76.7150, 9.7127],
+  Theni: [77.5193, 10.0000],
+  Pollachi: [77.0000, 10.6667],
+  Ranni: [76.9385, 9.3625],
+  Pathanamthitta: [76.7873, 9.2647],
+  Adoor: [76.7417, 9.1793],
+  Punaloor: [76.8997, 9.0126],
+  Thenkashi: [77.3422, 8.9606],
+  Neriyamangalam: [76.8033, 10.0644],
+  Munnar: [77.0595, 10.0889]
+};
+
+/* -----------------------
+   Geo helpers
+   ----------------------- */
+function toRad(deg){ return deg * Math.PI / 180; }
+function haversine(a, b){
+  const R = 6371;
+  const dLat = toRad(b[1]-a[1]);
+  const dLon = toRad(b[0]-a[0]);
+  const lat1 = toRad(a[1]), lat2 = toRad(b[1]);
+  const aa = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  const c = 2*Math.atan2(Math.sqrt(aa), Math.sqrt(1-aa));
+  return R * c;
+}
+function pointLineDistance(A,B,C){
+  const [x1,y1]=A, [x2,y2]=B, [x0,y0]=C;
+  const num = Math.abs((y2 - y1)*x0 - (x2 - x1)*y0 + x2*y1 - y2*x1);
+  const den = Math.sqrt((y2 - y1)**2 + (x2 - x1)**2);
+  return den === 0 ? haversine(A,C) : num/den;
+}
+function nearPlaceName(coord, radiusKm=12){
+  let nearest=null, min=1e9;
+  for(const [name, p] of Object.entries(majorPlaces)){
+    const d = haversine(coord, p);
+    if(d < radiusKm && d < min){ min=d; nearest=name; }
+  }
+  return nearest;
+}
+
+/* -----------------------
+   UI elements
+   ----------------------- */
+const inputEl = document.getElementById('search');
+const modeEl = document.getElementById('mode');
+const goBtn = document.getElementById('go');
+const saveFavBtn = document.getElementById('saveFav');
+const etaBox = document.getElementById('etaBox');
+const distanceEl = document.getElementById('distance');
+const etaEl = document.getElementById('eta');
+const funMsgEl = document.getElementById('funMessage');
+const stepsEl = document.getElementById('steps');
+const favoritesEl = document.getElementById('favorites');
+const etaSmall = document.getElementById('etaSmall');
+
+function setMessage(text, tone='info'){
+  funMsgEl.textContent = text;
+  if(tone === 'error'){ funMsgEl.style.color = '#fecaca'; }
+  else funMsgEl.style.color = '#a5b4fc';
+}
+function setETA(distanceKm, etaMin){
+  distanceEl.textContent = `${distanceKm.toFixed(1)} km`;
+  etaEl.textContent = `${etaMin} min`;
+  etaSmall.textContent = `${etaMin}m • ${distanceKm.toFixed(1)}km`;
+  etaSmall.classList.remove('hidden');
+}
+
+/* -----------------------
+   Favorites UI
+   ----------------------- */
+function renderFavorites(){
+  favoritesEl.innerHTML = '';
+  if(favorites.length === 0){
+    favoritesEl.innerHTML = '<div class="text-slate-400 text-xs">No favorites yet — save routes you like ★</div>';
+    return;
+  }
+  for(const f of favorites){
+    const d = document.createElement('div');
+    d.className = 'p-2 mb-2 rounded bg-slate-800 flex items-center justify-between';
+    d.innerHTML = `<div><div class="font-medium">${f.name}</div><div class="text-xs text-slate-300">${f.fromName || 'Start'} → ${f.toName}</div></div>
+                   <div class="flex gap-2">
+                     <button class="btn-load text-xs px-2 py-1 bg-emerald-500 rounded">Load</button>
+                     <button class="btn-del text-xs px-2 py-1 bg-red-500 rounded">Del</button>
+                   </div>`;
+    favoritesEl.appendChild(d);
+    d.querySelector('.btn-load').addEventListener('click',()=> {
+      inputEl.value = f.toName;
+      if(f.mode) modeEl.value = f.mode;
+      runRoute({ start: f.start, dest: f.dest, mode: f.mode });
     });
+    d.querySelector('.btn-del').addEventListener('click',()=>{
+      favorites = favorites.filter(x => x.name !== f.name);
+      localStorage.setItem('valanja.favs', JSON.stringify(favorites));
+      renderFavorites();
+    });
+  }
+}
+renderFavorites();
 
-    map.addControl(new mapboxgl.NavigationControl());
+/* -----------------------
+   Cache helpers
+   ----------------------- */
+function cacheKey(start, dest, mode, waypoints=[]) {
+  const s = `${start[0].toFixed(5)},${start[1].toFixed(5)}`;
+  const d = `${dest[0].toFixed(5)},${dest[1].toFixed(5)}`;
+  const wp = waypoints.map(w=>`${w[0].toFixed(5)},${w[1].toFixed(5)}`).join('|');
+  return `valanja.route:${s}|${d}|${mode}|${wp}`;
+}
+function saveRouteCache(key, data){
+  try { localStorage.setItem(key, JSON.stringify({v:1,ts:Date.now(),data})); }
+  catch(e){ console.warn('Cache save failed', e); }
+}
+function loadRouteCache(key){
+  try { const raw = localStorage.getItem(key); if(!raw) return null; const obj = JSON.parse(raw); if(obj && obj.data) return obj.data; }
+  catch(e){ console.warn('Cache load failed', e); }
+  return null;
+}
 
-    let userMarker;
-    let destMarker;
-    const routeLayerId = 'route';
+/* -----------------------
+   Geolocation
+   ----------------------- */
+function setUserMarker(lnglat){
+  if(!userMarker) userMarker = new mapboxgl.Marker({color:'blue'}).setLngLat(lnglat).addTo(map);
+  else userMarker.setLngLat(lnglat);
+}
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lng = pos.coords.longitude, lat = pos.coords.latitude;
+    setUserMarker([lng,lat]);
+    map.setCenter([lng,lat]);
+  }, err => { console.warn('Geolocation error', err); }, { enableHighAccuracy:true });
+}
 
-    // Major places with coordinates (add Neriyamangalam & Munnar as well)
-    const majorPlaces = {
-      Perumbavoor: [76.5446, 10.1071],
-      Muvattupuzha: [76.6017, 9.9589],
-      Kolenchery: [76.5143, 10.0621],
-      Aluva: [76.3940, 10.1070],
-      Kothamangalam: [76.5850, 10.1133],
-      Thodupuzha: [76.7185, 9.8789],
-      Pala: [76.7156, 9.7156],
-      Theni: [77.5212, 10.0180],
-      Pollachi: [77.0022, 10.6610],
-      Ranni: [76.8496, 9.3307],
-      Pathanamthitta: [76.7833, 9.2640],
-      Adoor: [76.8004, 9.1720],
-      Punaloor: [76.8992, 9.0081],
-      Thenkashi: [77.3241, 8.9602],
-      Neriyamangalam: [76.8033, 10.0644],
-      Munnar: [77.0595, 10.0889]
+/* -----------------------
+   Utilities
+   ----------------------- */
+function debounce(fn, wait=300){
+  let t;
+  return function(...a){ clearTimeout(t); t = setTimeout(()=> fn.apply(this,a), wait); };
+}
+
+/* -----------------------
+   Waypoint logic (unchanged)
+   ----------------------- */
+function getSnailWaypointsChainForKD(start,dest){
+  const startNear = nearPlaceName(start, 15);
+  const destNear = nearPlaceName(dest, 20);
+  if(startNear === 'Kothamangalam' && destNear === 'Munnar'){
+    return [
+      majorPlaces.Perumbavoor,
+      majorPlaces.Muvattupuzha,
+      majorPlaces.Thodupuzha,
+      majorPlaces.Neriyamangalam
+    ];
+  }
+  return null;
+}
+function pickWaypointsForMode(start, dest, mode){
+  if(mode === 'snail'){
+    const chain = getSnailWaypointsChainForKD(start,dest);
+    if(chain) return chain;
+    const candidates = Object.values(majorPlaces).filter(p=> haversine(start,p) > 10 && haversine(p,dest) > 8 );
+    candidates.sort((a,b)=> pointLineDistance(start,dest,b) - pointLineDistance(start,dest,a));
+    return candidates.slice(0,3);
+  } else if(mode === 'tractor'){
+    let best=null, bestExtra=0;
+    for(const p of Object.values(majorPlaces)){
+      const via = haversine(start,p) + haversine(p,dest);
+      const direct = haversine(start,dest);
+      const extra = via - direct;
+      if(extra > 8 && extra < 30 && extra > bestExtra){ bestExtra = extra; best = p; }
+    }
+    return best ? [best] : [];
+  } else if(mode === 'looping'){
+    const picks=[];
+    for(const p of Object.values(majorPlaces)){ if(picks.length>=2) break;
+      const extra = (haversine(start,p) + haversine(p,dest)) - haversine(start,dest);
+      if(extra > 5 && extra < 40){ picks.push(p); }
+    }
+    return picks;
+  }
+  return [];
+}
+
+function buildCoordsString(start, waypoints, dest){ const coords = [start, ...waypoints, dest]; return coords.map(c=>`${c[0]},${c[1]}`).join(';'); }
+
+/* -----------------------
+   Render & steps
+   ----------------------- */
+function renderSteps(route){
+  stepsEl.innerHTML = '';
+  if(!route || !route.legs) { stepsEl.innerHTML = 'No steps available.'; return; }
+  let idx=1;
+  for(const leg of route.legs){
+    for(const step of leg.steps || []){
+      const el = document.createElement('div');
+      el.className = 'p-2 mb-1 rounded bg-slate-900 text-slate-200';
+      el.innerHTML = `<div class="text-xs text-slate-300">Step ${idx++}</div>
+                      <div class="mt-1">${step.maneuver.instruction}</div>
+                      <div class="text-xs text-slate-400 mt-1">${(step.distance/1000).toFixed(2)} km • ${(step.duration/60).toFixed(0)} min</div>`;
+      stepsEl.appendChild(el);
+    }
+  }
+}
+
+/* -----------------------
+   drawRoute: ALL modes use RED solid line (continuous)
+   ----------------------- */
+function drawRoute(geojson) {
+  try {
+    if(map.getLayer(routeLayerId)) map.removeLayer(routeLayerId);
+    if(map.getSource(routeLayerId)) map.removeSource(routeLayerId);
+  } catch(e){ console.warn(e); }
+
+  map.addSource(routeLayerId, { type: 'geojson', data: { type: 'Feature', geometry: geojson } });
+
+  map.addLayer({
+    id: routeLayerId,
+    type: 'line',
+    source: routeLayerId,
+    layout: {
+      'line-join': 'round',
+      'line-cap': 'round'
+    },
+    paint: {
+      'line-color': '#FF0000',  // bright solid red
+      'line-width': 6           // thick line for good visibility
+    }
+  });
+}
+
+
+/* -----------------------
+   Vehicle animation helpers
+   - Precompute cumulative distances and animate along fraction of total distance
+   - Playback is sped up (playbackSpeed) so animation finishes quickly but follows route shape
+   ----------------------- */
+function computeCumulativeDistances(coords){
+  const dists = [0];
+  let total = 0;
+  for(let i=0;i<coords.length-1;i++){
+    const a = coords[i], b = coords[i+1];
+    const seg = haversine(a,b);
+    total += seg;
+    dists.push(total);
+  }
+  return { dists, total };
+}
+
+function animateVehicleAlong(coords, routeDurationSec){
+  // cleanup previous
+  if(vehicle.animId) cancelAnimationFrame(vehicle.animId);
+  if(vehicle.marker) { vehicle.marker.remove(); vehicle.marker = null; }
+
+  if(!coords || coords.length < 2) return;
+
+  // Create DOM marker — inline SVG car for reliability
+  const el = document.createElement('div');
+  el.className = 'vehicle-marker';
+  el.innerHTML = `
+    <svg viewBox="0 0 24 24" width="36" height="36" xmlns="http://www.w3.org/2000/svg">
+      <path fill="#ef4444" d="M3 11c0-1.1.9-2 2-2h1V7c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2v2h1c1.1 0 2 .9 2 2v5c0 .55-.45 1-1 1h-1c0 1.66-1.34 3-3 3s-3-1.34-3-3H9c0 1.66-1.34 3-3 3S3 21.66 3 20H2c-.55 0-1-.45-1-1v-5c0-1.1.9-2 2-2z"/>
+    </svg>`;
+
+  vehicle.marker = new mapboxgl.Marker({ element: el, anchor: 'center' }).setLngLat(coords[0]).addTo(map);
+
+  // Precompute distances
+  const cd = computeCumulativeDistances(coords);
+  const totalKm = cd.total;
+
+  // Playback speed: accelerate animation so it doesn't take real-world time
+  const playbackSpeed = 10; // 10x faster; increase for faster animation
+  const animDurationMs = Math.max(3000, (routeDurationSec * 1000) / playbackSpeed); // at least 3s
+
+  const startTime = performance.now();
+
+  function step(now){
+    const elapsed = now - startTime;
+    let t = Math.min(1, elapsed / animDurationMs); // 0..1
+    const targetKm = totalKm * t;
+
+    // find segment idx
+    let idx = 0;
+    while(idx < cd.dists.length - 1 && cd.dists[idx+1] < targetKm) idx++;
+
+    // segment start dist
+    const segStartKm = cd.dists[idx];
+    const segEndKm = cd.dists[idx+1] || segStartKm;
+    const segLenKm = Math.max(0.000001, segEndKm - segStartKm);
+    const segT = Math.min(1, (targetKm - segStartKm) / segLenKm);
+
+    const a = coords[idx], b = coords[Math.min(coords.length-1, idx+1)];
+    const lng = a[0] + (b[0] - a[0]) * segT;
+    const lat = a[1] + (b[1] - a[1]) * segT;
+    vehicle.marker.setLngLat([lng, lat]);
+
+    if(elapsed < animDurationMs){
+      vehicle.animId = requestAnimationFrame(step);
+    } else {
+      // end: place at final coordinate
+      vehicle.marker.setLngLat(coords[coords.length-1]);
+      vehicle.animId = null;
+    }
+  }
+  vehicle.animId = requestAnimationFrame(step);
+}
+
+/* -----------------------
+   Core: runRoute
+   ----------------------- */
+async function runRoute(opts = {}) {
+  const mode = opts.mode || modeEl.value || 'normal';
+  let start = opts.start || (userMarker && userMarker.getLngLat && [userMarker.getLngLat().lng, userMarker.getLngLat().lat]) || null;
+  let dest = opts.dest || null;
+  let destName = opts.destName || null;
+
+  const q = inputEl.value.trim();
+  if(!dest && !q){ setMessage('Type a destination first!', 'error'); return; }
+
+  if(!dest){
+    setMessage('Searching place...');
+    const geourl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json?limit=1&access_token=${mapboxgl.accessToken}`;
+    const gres = await fetch(geourl).catch(e=>{ console.warn('Geocode failed',e); setMessage('Geocoding failed — offline?','error'); throw e; });
+    const gdata = await gres.json();
+    if(!gdata.features || gdata.features.length===0){ setMessage('Place not found','error'); return; }
+    dest = gdata.features[0].geometry.coordinates;
+    destName = gdata.features[0].place_name || q;
+  }
+
+  if(!start){ setMessage('User location unknown — allow location or set start manually', 'error'); return; }
+
+  if(!destMarker) destMarker = new mapboxgl.Marker({ color:'red' }).setLngLat(dest).addTo(map);
+  else destMarker.setLngLat(dest);
+
+  let profile = 'driving';
+  if(mode === 'snail' && haversine(start,dest) < 6) profile = 'walking';
+
+  const waypoints = pickWaypointsForMode(start, dest, mode) || [];
+  const finalWaypoints = [...waypoints];
+  if(mode === 'looping') finalWaypoints.push(start);
+
+  const coordsString = buildCoordsString(start, finalWaypoints, dest);
+  const key = cacheKey(start,dest,mode,finalWaypoints);
+
+  const cached = loadRouteCache(key);
+  if(cached){
+    console.log('Using cached route (fast):', key);
+    drawRoute(cached.geometry, mode);
+    renderSteps({legs: cached.steps || []});
+    setETA(cached.distance, Math.round(cached.duration/60));
+    setMessage('Showing cached route (offline or saved).');
+    // animate cached if it has geometry and duration
+    if(cached.geometry && cached.geometry.coordinates) {
+      animateVehicleAlong(cached.geometry.coordinates, (cached.duration || 60));
+    }
+  } else {
+    setMessage('Calculating route...');
+  }
+
+  const directionsUrl = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?geometries=geojson&overview=full&steps=true&annotations=distance,duration&access_token=${mapboxgl.accessToken}`;
+  let dirData = null;
+  try {
+    const resp = await fetch(directionsUrl);
+    if(!resp.ok) throw new Error('Directions API returned ' + resp.status);
+    dirData = await resp.json();
+    if(!dirData.routes || dirData.routes.length===0) throw new Error('No routes returned');
+  } catch(err){
+    console.warn('Directions fetch failed:', err);
+    if(cached){ setMessage('Couldn\'t fetch fresh route — using cached result.', 'error'); return; }
+    else { setMessage('Couldn\'t get route (offline or directions error).', 'error'); return; }
+  }
+
+  const route = dirData.routes[0];
+  lastRouteInfo = route;
+
+  drawRoute(route.geometry, mode);
+  const bounds = new mapboxgl.LngLatBounds();
+  route.geometry.coordinates.forEach(c => bounds.extend(c));
+  map.fitBounds(bounds, { padding: 50, maxZoom: 14 });
+
+  if(window.waypointMarkers){ window.waypointMarkers.forEach(m=>m.remove()); window.waypointMarkers = []; }
+
+  renderSteps(route);
+
+  const distanceKm = route.distance / 1000;
+  const etaMin = Math.max(1, Math.round(route.duration / 60));
+  setETA(distanceKm, etaMin);
+
+  let message = '';
+  if(etaMin < 5) message = `Zoom zoom — you'll be there in ${etaMin} min 🚀`;
+  else if(etaMin < 15) message = `Nice! A short and sweet ${etaMin} min drive 😎`;
+  else if(etaMin < 30) message = `Buckle up — about ${etaMin} minutes on the road 🛣️`;
+  else message = `Congrats! Scenic route of ~${etaMin} minutes — enjoy the views 🎉`;
+  if(mode === 'snail') message += ' 🐌 Slow and steady, remember to sip chai!';
+  if(mode === 'tractor') message += ' 🚜 Tractor vibes: heavy roads, steady pace.';
+  if(mode === 'looping') message += ' 🔁 Loop complete: you get a tour + destination.';
+  setMessage(message);
+
+  // Save to cache
+  try {
+    const toCache = {
+      geometry: route.geometry,
+      duration: route.duration/1,
+      distance: distanceKm,
+      steps: route.legs.map(l => ({ steps: l.steps ? l.steps.map(s=>({ distance:s.distance, duration:s.duration, maneuver:s.maneuver })) : [] }))
     };
+    saveRouteCache(key, toCache);
+  } catch(e){ console.warn('Cache save error', e); }
 
-    if (navigator.geolocation) {
-      navigator.geolocation.watchPosition(pos => {
-        const lng = pos.coords.longitude;
-        const lat = pos.coords.latitude;
+  // Animate vehicle along route
+  if(route.geometry && route.geometry.coordinates){
+    animateVehicleAlong(route.geometry.coordinates, route.duration || 60);
+  }
+}
 
-        if (!userMarker) {
-          userMarker = new mapboxgl.Marker({ color: 'blue' }).setLngLat([lng, lat]).addTo(map);
-        } else {
-          userMarker.setLngLat([lng, lat]);
-        }
-      }, err => console.error(err), { enableHighAccuracy: true });
-    }
+/* -----------------------
+   Hook up UI (debounced)
+   ----------------------- */
+const runRouteDebounced = debounce(()=> runRoute({mode: modeEl.value}), 450);
+goBtn.addEventListener('click', ()=> runRouteDebounced());
+inputEl.addEventListener('keydown', e => { if(e.key === 'Enter') runRouteDebounced(); });
 
-    function toRad(deg) { return deg * Math.PI / 180; }
+saveFavBtn.addEventListener('click', ()=>{
+  const toName = inputEl.value.trim();
+  if(!toName){ setMessage('Type destination to save a favorite', 'error'); return; }
+  const start = userMarker && userMarker.getLngLat ? [userMarker.getLngLat().lng, userMarker.getLngLat().lat] : null;
+  const name = prompt('Favorite name?', `${toName} (${modeEl.value})`);
+  if(!name) return;
+  favorites.push({ name, toName, mode: modeEl.value, start, destCoords: (destMarker && destMarker.getLngLat) ? [destMarker.getLngLat().lng, destMarker.getLngLat().lat] : null });
+  localStorage.setItem('valanja.favs', JSON.stringify(favorites));
+  renderFavorites();
+  setMessage(`Saved favorite “${name}” — nice choice! ⭐`);
+});
 
-    function distanceBetween(coord1, coord2) {
-      const R = 6371;
-      const dLat = toRad(coord2[1] - coord1[1]);
-      const dLng = toRad(coord2[0] - coord1[0]);
-      const lat1 = toRad(coord1[1]);
-      const lat2 = toRad(coord2[1]);
-      const a = Math.sin(dLat / 2) ** 2 +
-                Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    }
+document.getElementById('toggleSteps').addEventListener('click', ()=>{
+  if(lastRouteInfo) renderSteps(lastRouteInfo);
+  else setMessage('No route to show steps for', 'error');
+});
 
-    // Check if a coord is near a major place (within ~10km)
-    function findNearestMajorPlace(coord) {
-      let nearest = null;
-      let minDist = 10000;
-      for (const [name, placeCoord] of Object.entries(majorPlaces)) {
-        const dist = distanceBetween(coord, placeCoord);
-        if (dist < 10 && dist < minDist) {
-          minDist = dist;
-          nearest = name;
-        }
-      }
-      return nearest;
-    }
+renderFavorites();
 
-    document.getElementById('go').addEventListener('click', async () => {
-      const place = document.getElementById('search').value.trim();
-      const mode = document.getElementById('mode').value;
-
-      if (!place) return alert('Type a place name!');
-
-      try {
-        // Geocode destination
-        const geoRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${mapboxgl.accessToken}`);
-        const geoData = await geoRes.json();
-
-        if (!geoData.features.length) return alert('Place not found');
-
-        const dest = geoData.features[0].geometry.coordinates;
-
-        // Place or move destination marker
-        if (!destMarker) {
-          destMarker = new mapboxgl.Marker({ color: 'red' }).setLngLat(dest).addTo(map);
-        } else {
-          destMarker.setLngLat(dest);
-        }
-
-        // Start coords: user location or default Kochi
-        const start = userMarker ? userMarker.getLngLat().toArray() : [76.2673, 9.9312];
-
-        // Routing profile (walking for snail, driving otherwise)
-        let profile = mode === 'snail' ? 'walking' : 'driving';
-
-        let waypoints = [];
-
-        if (mode === 'snail') {
-          // Check if start is near Kothamangalam & destination near Munnar to apply custom waypoint chain
-          const startNear = findNearestMajorPlace(start);
-          const destNear = findNearestMajorPlace(dest);
-
-          if (startNear === 'Kothamangalam' && destNear === 'Munnar') {
-            // Fixed waypoint chain for snail mode (order important)
-            waypoints = [
-              majorPlaces.Perumbavoor,
-              majorPlaces.Muvattupuzha,
-              majorPlaces.Thodupuzha,
-              majorPlaces.Neriyamangalam
-            ];
-            console.log('Snail mode: Using fixed waypoint chain for Kothamangalam -> Munnar');
-          } else {
-            // Default snail: pick waypoint ~30km from start if available
-            // (Reuse previous logic: find nearest waypoint ~30km away)
-            // We'll pick one waypoint near 30 km radius for demo:
-            for (const [name, coords] of Object.entries(majorPlaces)) {
-              const dist = distanceBetween(start, coords);
-              if (dist >= 25 && dist <= 35) {
-                waypoints.push(coords);
-                break;
-              }
-            }
-            if (waypoints.length === 0) {
-              console.log('Snail mode: no suitable waypoint ~30km found, using direct route');
-            }
-          }
-        } else if (mode === 'tractor') {
-          // Tractor mode example waypoint ~15km away
-          for (const [name, coords] of Object.entries(majorPlaces)) {
-            const dist = distanceBetween(start, coords);
-            if (dist >= 10 && dist <= 20) {
-              waypoints.push(coords);
-              break;
-            }
-          }
-        } else if (mode === 'looping') {
-          // Looping mode: visit 2 places then return to start then destination
-          let count = 0;
-          for (const [name, coords] of Object.entries(majorPlaces)) {
-            if (count >= 2) break;
-            const distStart = distanceBetween(start, coords);
-            const distDest = distanceBetween(coords, dest);
-            const directDist = distanceBetween(start, dest);
-            if (distStart + distDest > directDist + 5 && distStart + distDest < directDist + 40) {
-              waypoints.push(coords);
-              count++;
-            }
-          }
-          waypoints.push(start);
-        }
-        // Normal mode: no waypoints
-
-        // Build directions coordinates string
-        let coordsString = `${start[0]},${start[1]}`;
-        waypoints.forEach(wp => {
-          coordsString += `;${wp[0]},${wp[1]}`;
-        });
-        coordsString += `;${dest[0]},${dest[1]}`;
-
-        const directionsUrl = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
-
-        const dirRes = await fetch(directionsUrl);
-        const dirData = await dirRes.json();
-
-        if (!dirData.routes || dirData.routes.length === 0) return alert('No route found');
-
-        const route = dirData.routes[0].geometry;
-
-        if (!route || !route.coordinates || route.coordinates.length === 0) {
-          return alert('Route geometry invalid or empty');
-        }
-
-        // Remove old route layer if exists
-        if (map.getLayer(routeLayerId)) {
-          map.removeLayer(routeLayerId);
-          map.removeSource(routeLayerId);
-        }
-
-        // Paint styles per mode
-        let paint = {
-          'line-color': '#ff0000',
-          'line-width': 4,
-          'line-opacity': 1
-        };
-        if (mode === 'snail') {
-          paint['line-color'] = '#00ff00';
-          paint['line-dasharray'] = [2, 4];
-          paint['line-width'] = 3;
-        } else if (mode === 'tractor') {
-          paint['line-color'] = '#ffa500';
-          paint['line-width'] = 6;
-        } else if (mode === 'looping') {
-          paint['line-color'] = '#00ffff';
-          paint['line-width'] = 4;
-          paint['line-opacity'] = 0.7;
-        }
-
-        // Add route to map
-        map.addSource(routeLayerId, {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            geometry: route
-          }
-        });
-
-        map.addLayer({
-          id: routeLayerId,
-          type: 'line',
-          source: routeLayerId,
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: paint
-        });
-
-        // Fit map bounds to route
-        const bounds = new mapboxgl.LngLatBounds();
-        route.coordinates.forEach(c => bounds.extend(c));
-        map.fitBounds(bounds, { padding: 50, maxZoom: 14 });
-
-        // Only start (blue) and destination (red) markers - no waypoint markers
-        if (window.waypointMarker) {
-          window.waypointMarker.remove();
-          window.waypointMarker = null;
-        }
-
-      } catch (error) {
-        console.error('Error:', error);
-        alert('Error: ' + error.message);
-      }
-    });
-  </script>
+</script>
 </body>
 </html>
