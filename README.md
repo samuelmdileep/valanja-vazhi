@@ -69,14 +69,11 @@ Open `index.html` in your browser. **Prepare snacks** 🍿.
 ## 📸 Project Documentation  
 
 ### Screenshots  
-![Screenshot1](screenshot 1.png)  
+![Screenshot1](screenshot1.png)  
 *Landing page that greets you like an old uncle who “knows a shortcut” 👴🗺️.*  
 
-![Screenshot2](Add screenshot 2.png)  
+![Screenshot2](screenshot2.png)  
 *Route map resembling noodles thrown on a floor 🍜.*  
-
-![Screenshot3](Add screenshot 3 here)  
-*Popup saying: "Vazhi thetti poyi alle?" with full confidence 💪.*  
 
 ---
 
