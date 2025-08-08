@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Valanja Vazhi Maps 🗺️</title>
+  <title>Valanja Vazhi Maps 🗺</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -58,23 +58,27 @@
       }, err => console.error(err), { enableHighAccuracy: true });
     }
 
-    // Helpers to convert degrees <-> radians
+    // Convert degrees to radians
     function toRad(deg) {
       return deg * Math.PI / 180;
     }
+
+    // Convert radians to degrees
     function toDeg(rad) {
       return rad * 180 / Math.PI;
     }
 
-    // Get bounding box for radius in km around center
+    // Compute bounding box (minLng, minLat, maxLng, maxLat) around center for given radius in km
     function getBoundingBox(center, radiusKm) {
       const lat = center[1];
       const lng = center[0];
 
-      // Latitude: ~110.574 km per degree
+      const earthRadius = 6371; // km
+
+      // Latitude: 1 deg ≈ 110.574 km
       const latDelta = radiusKm / 110.574;
 
-      // Longitude: ~111.320*cos(latitude) km per degree
+      // Longitude: 1 deg ≈ 111.320*cos(latitude) km
       const lngDelta = radiusKm / (111.320 * Math.cos(toRad(lat)));
 
       return [
@@ -85,9 +89,33 @@
       ];
     }
 
-    // Calculate haversine distance between two lng-lat points in km
+    // Search POIs near destination within bounding box
+    async function searchNearbyPOIs(center, radiusKm) {
+      const bbox = getBoundingBox(center, radiusKm);
+      // Mapbox Geocoding API allows bbox param to limit search area
+      // We search for generic POIs by querying 'poi' (can be customized)
+      const query = 'poi';
+
+      const url = https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json +
+        ?bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]} +
+        &access_token=${mapboxgl.accessToken} +
+        &limit=10;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      // Filter out POIs that are too close to destination (less than 200m) to avoid trivial
+      const filtered = data.features.filter(f => {
+        const d = distanceBetween(center, f.geometry.coordinates);
+        return d > 0.2; // km
+      });
+
+      return filtered;
+    }
+
+    // Calculate approximate distance between two coords (lng, lat) in km (Haversine formula)
     function distanceBetween(coord1, coord2) {
-      const R = 6371;
+      const R = 6371; // Earth radius km
       const dLat = toRad(coord2[1] - coord1[1]);
       const dLng = toRad(coord2[0] - coord1[0]);
       const lat1 = toRad(coord1[1]);
@@ -99,174 +127,79 @@
       return R * c;
     }
 
-    // Reverse geocode coords to get place name (type: place)
-    async function getPlaceName(coords) {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords[0]},${coords[1]}.json?types=place&limit=1&access_token=${mapboxgl.accessToken}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.features && data.features.length) {
-        return data.features[0].text.toLowerCase();
-      }
-      return '';
-    }
-
-    // Search for nearby towns/cities (places) within bounding box, exclude given names
-    async function searchNearbyTowns(center, radiusKm, excludeNames=[]) {
-      const bbox = getBoundingBox(center, radiusKm);
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/.json` +
-        `?bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}` +
-        `&types=place` +
-        `&limit=10` +
-        `&access_token=${mapboxgl.accessToken}`;
-
-      const res = await fetch(url);
-      const data = await res.json();
-
-      if (!data.features) return [];
-
-      return data.features.filter(f => !excludeNames.includes(f.text.toLowerCase()));
-    }
-
-    // Search multiple POI categories around destination bbox with proximity bias
-    async function searchAllCategories(center, radiusKm, proximity) {
-      const bbox = getBoundingBox(center, radiusKm);
-      const categories = ['market', 'mall', 'shopping', 'restaurant'];
-
-      const promises = categories.map(cat => {
-        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(cat)}.json` +
-          `?bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}` +
-          `&proximity=${proximity[0]},${proximity[1]}` +
-          `&limit=5&types=poi&access_token=${mapboxgl.accessToken}`;
-        return fetch(url).then(res => res.json());
-      });
-
-      const results = await Promise.all(promises);
-
-      // Combine all features
-      let allFeatures = [];
-      for (const data of results) {
-        if (data.features) allFeatures = allFeatures.concat(data.features);
-      }
-
-      // Filter out POIs too close to destination (<200m)
-      const filtered = allFeatures.filter(f => distanceBetween(center, f.geometry.coordinates) > 0.2);
-
-      return filtered;
-    }
-
-    let searchInProgress = false;
-
     document.getElementById('go').addEventListener('click', async () => {
-      if (searchInProgress) return; // debounce
-      searchInProgress = true;
-
       const place = document.getElementById('search').value.trim();
       const mode = document.getElementById('mode').value;
 
-      if (!place) {
-        alert('Type a place name!');
-        searchInProgress = false;
-        return;
-      }
+      if (!place) return alert('Type a place name!');
 
       try {
         // Geocode destination
-        const geoRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${mapboxgl.accessToken}`);
+        const geoRes = await fetch(https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${mapboxgl.accessToken});
         const geoData = await geoRes.json();
 
-        if (!geoData.features.length) {
-          alert('Place not found');
-          searchInProgress = false;
-          return;
-        }
+        if (!geoData.features.length) return alert('Place not found');
 
         const dest = geoData.features[0].geometry.coordinates;
-        const destName = geoData.features[0].text.toLowerCase();
 
-        // Place/move red destination marker
+        // Place or move red destination marker
         if (!destMarker) {
           destMarker = new mapboxgl.Marker({ color: 'red' }).setLngLat(dest).addTo(map);
         } else {
           destMarker.setLngLat(dest);
         }
 
-        // Start coords: user location or default Kochi
+        // Start coords from user or default Kochi
         const start = userMarker ? userMarker.getLngLat().toArray() : [76.2673, 9.9312];
-        const startName = await getPlaceName(start);
 
-        // Radius based on mode
+        // Decide radius (km) based on mode
         let radiusKm = 5;
-        if (mode === 'snail') radiusKm = 50; // bigger radius for towns
+        if (mode === 'snail') radiusKm = 30;
         else if (mode === 'tractor') radiusKm = 15;
         else if (mode === 'looping') radiusKm = 10;
 
+        // Search for nearby POIs around destination
+        const pois = await searchNearbyPOIs(dest, radiusKm);
+
+        // Pick one POI randomly as intermediate waypoint (or none if empty)
         let waypoint = null;
-
-        if (mode === 'snail') {
-          // Search for nearby towns excluding start/dest town names
-          const towns = await searchNearbyTowns(start, radiusKm, [startName, destName]);
-
-          if (towns.length) {
-            // Sort by distance from start descending to get farther town for bigger detour
-            towns.sort((a, b) => {
-              const distA = distanceBetween(start, a.geometry.coordinates);
-              const distB = distanceBetween(start, b.geometry.coordinates);
-              return distB - distA; // farthest first
-            });
-            waypoint = towns[0].geometry.coordinates;
-            console.log('Picked town waypoint:', towns[0].text, waypoint);
-          } else {
-            console.log('No nearby towns found within', radiusKm, 'km');
-          }
+        if (pois.length > 0) {
+          waypoint = pois[Math.floor(Math.random() * pois.length)].geometry.coordinates;
+          console.log('Picked waypoint:', waypoint);
         } else {
-          // For other modes, fallback to POIs as before
-          const pois = await searchAllCategories(dest, radiusKm, start);
-          if (pois.length > 0) {
-            pois.sort((a, b) => distanceBetween(start, a.geometry.coordinates) - distanceBetween(start, b.geometry.coordinates));
-            waypoint = pois[0].geometry.coordinates;
-            console.log('Picked POI waypoint:', waypoint);
-          }
+          console.log('No nearby POIs found in radius', radiusKm, 'km');
         }
 
-        // Routing profile
+        // Route profile for directions
         let profile = 'driving';
         if (mode === 'snail') profile = 'walking';
 
-        // Build directions URL
-        let coordsString = `${start[0]},${start[1]}`;
-        if (waypoint) coordsString += `;${waypoint[0]},${waypoint[1]}`;
-        coordsString += `;${dest[0]},${dest[1]}`;
+        // Build directions URL with waypoint if exists
+        // Format: start;waypoint;destination
+        let coordsString = ${start[0]},${start[1]};
+        if (waypoint) coordsString += ;${waypoint[0]},${waypoint[1]};
+        coordsString += ;${dest[0]},${dest[1]};
 
-        if (mode === 'snail') {
-          coordsString += `;${start[0]},${start[1]}`;  // Loop back to start
-        }
-
-        const directionsUrl = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
+        const directionsUrl = https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken};
 
         const dirRes = await fetch(directionsUrl);
         const dirData = await dirRes.json();
 
-        if (!dirData.routes || dirData.routes.length === 0) {
-          alert('No route found');
-          searchInProgress = false;
-          return;
-        }
+        if (!dirData.routes || dirData.routes.length === 0) return alert('No route found');
 
         const route = dirData.routes[0].geometry;
 
         if (!route || !route.coordinates || route.coordinates.length === 0) {
-          alert('Route geometry invalid or empty');
-          searchInProgress = false;
-          return;
+          return alert('Route geometry invalid or empty');
         }
 
-        // Remove old route if any
+        // Remove old route
         if (map.getLayer(routeLayerId)) {
           map.removeLayer(routeLayerId);
           map.removeSource(routeLayerId);
         }
 
-        // Paint styles per mode
+        // Paint styles for mode
         let paint = {
           'line-color': '#ff0000',
           'line-width': 4,
@@ -285,7 +218,6 @@
           paint['line-opacity'] = 0.7;
         }
 
-        // Add route to map
         map.addSource(routeLayerId, {
           type: 'geojson',
           data: {
@@ -302,36 +234,18 @@
           paint: paint
         });
 
-        // Fit map bounds to route
+        // Fit map to route bounds
         const bounds = new mapboxgl.LngLatBounds();
         route.coordinates.forEach(c => bounds.extend(c));
         map.fitBounds(bounds, { padding: 50 });
 
-        // Show waypoint marker and popup with name if waypoint exists
+        // Optional: add a marker for intermediate waypoint
         if (waypoint) {
-          // Find name for waypoint (town or POI)
-          let waypointName = 'Waypoint';
-          if (mode === 'snail') {
-            // We searched towns
-            const towns = await searchNearbyTowns(start, radiusKm, [startName, destName]);
-            const town = towns.find(t => t.geometry.coordinates[0] === waypoint[0] && t.geometry.coordinates[1] === waypoint[1]);
-            if (town) waypointName = town.text;
-          } else {
-            // For POIs
-            const pois = await searchAllCategories(dest, radiusKm, start);
-            const poi = pois.find(p => p.geometry.coordinates[0] === waypoint[0] && p.geometry.coordinates[1] === waypoint[1]);
-            if (poi) waypointName = poi.place_name;
-          }
-
-          if (!window.waypointMarker) {
-            window.waypointMarker = new mapboxgl.Marker({ color: 'yellow' }).setLngLat(waypoint).addTo(map);
-          } else {
+          if (window.waypointMarker) {
             window.waypointMarker.setLngLat(waypoint);
+          } else {
+            window.waypointMarker = new mapboxgl.Marker({ color: 'yellow' }).setLngLat(waypoint).addTo(map);
           }
-
-          const popup = new mapboxgl.Popup().setText(waypointName);
-          window.waypointMarker.setPopup(popup).togglePopup();
-
         } else if (window.waypointMarker) {
           window.waypointMarker.remove();
           window.waypointMarker = null;
@@ -340,8 +254,6 @@
       } catch (error) {
         console.error('Error getting route:', error);
         alert('Error getting route: ' + error.message);
-      } finally {
-        searchInProgress = false;
       }
     });
   </script>
