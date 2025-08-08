@@ -7,7 +7,7 @@
 
 👨‍💻 **Team Members**  
 - 🏆 **Team Lead:** Samuel M Dileep – MA College of Engineering  
-- 🛠 **Member 2:** Muhammed Shibin – MA College of Engineering  
+- 🛠 **Member 2:** Muhammed Shibin P – MA College of Engineering  
 
 ---
 
