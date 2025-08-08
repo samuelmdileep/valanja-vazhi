@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Valanja Vazhi Maps 🗺</title>
+  <title>Valanja Vazhi Maps 🗺️</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
@@ -45,6 +45,26 @@
     let destMarker;
     const routeLayerId = 'route';
 
+    // Major places with coordinates (add Neriyamangalam & Munnar as well)
+    const majorPlaces = {
+      Perumbavoor: [76.5446, 10.1071],
+      Muvattupuzha: [76.6017, 9.9589],
+      Kolenchery: [76.5143, 10.0621],
+      Aluva: [76.3940, 10.1070],
+      Kothamangalam: [76.5850, 10.1133],
+      Thodupuzha: [76.7185, 9.8789],
+      Pala: [76.7156, 9.7156],
+      Theni: [77.5212, 10.0180],
+      Pollachi: [77.0022, 10.6610],
+      Ranni: [76.8496, 9.3307],
+      Pathanamthitta: [76.7833, 9.2640],
+      Adoor: [76.8004, 9.1720],
+      Punaloor: [76.8992, 9.0081],
+      Thenkashi: [77.3241, 8.9602],
+      Neriyamangalam: [76.8033, 10.0644],
+      Munnar: [77.0595, 10.0889]
+    };
+
     if (navigator.geolocation) {
       navigator.geolocation.watchPosition(pos => {
         const lng = pos.coords.longitude;
@@ -58,73 +78,32 @@
       }, err => console.error(err), { enableHighAccuracy: true });
     }
 
-    // Convert degrees to radians
-    function toRad(deg) {
-      return deg * Math.PI / 180;
-    }
+    function toRad(deg) { return deg * Math.PI / 180; }
 
-    // Convert radians to degrees
-    function toDeg(rad) {
-      return rad * 180 / Math.PI;
-    }
-
-    // Compute bounding box (minLng, minLat, maxLng, maxLat) around center for given radius in km
-    function getBoundingBox(center, radiusKm) {
-      const lat = center[1];
-      const lng = center[0];
-
-      const earthRadius = 6371; // km
-
-      // Latitude: 1 deg ≈ 110.574 km
-      const latDelta = radiusKm / 110.574;
-
-      // Longitude: 1 deg ≈ 111.320*cos(latitude) km
-      const lngDelta = radiusKm / (111.320 * Math.cos(toRad(lat)));
-
-      return [
-        lng - lngDelta, // minLng
-        lat - latDelta, // minLat
-        lng + lngDelta, // maxLng
-        lat + latDelta  // maxLat
-      ];
-    }
-
-    // Search POIs near destination within bounding box
-    async function searchNearbyPOIs(center, radiusKm) {
-      const bbox = getBoundingBox(center, radiusKm);
-      // Mapbox Geocoding API allows bbox param to limit search area
-      // We search for generic POIs by querying 'poi' (can be customized)
-      const query = 'poi';
-
-      const url = https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json +
-        ?bbox=${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]} +
-        &access_token=${mapboxgl.accessToken} +
-        &limit=10;
-
-      const res = await fetch(url);
-      const data = await res.json();
-
-      // Filter out POIs that are too close to destination (less than 200m) to avoid trivial
-      const filtered = data.features.filter(f => {
-        const d = distanceBetween(center, f.geometry.coordinates);
-        return d > 0.2; // km
-      });
-
-      return filtered;
-    }
-
-    // Calculate approximate distance between two coords (lng, lat) in km (Haversine formula)
     function distanceBetween(coord1, coord2) {
-      const R = 6371; // Earth radius km
+      const R = 6371;
       const dLat = toRad(coord2[1] - coord1[1]);
       const dLng = toRad(coord2[0] - coord1[0]);
       const lat1 = toRad(coord1[1]);
       const lat2 = toRad(coord2[1]);
-
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                Math.sin(dLng/2) * Math.sin(dLng/2) * Math.cos(lat1) * Math.cos(lat2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
+    }
+
+    // Check if a coord is near a major place (within ~10km)
+    function findNearestMajorPlace(coord) {
+      let nearest = null;
+      let minDist = 10000;
+      for (const [name, placeCoord] of Object.entries(majorPlaces)) {
+        const dist = distanceBetween(coord, placeCoord);
+        if (dist < 10 && dist < minDist) {
+          minDist = dist;
+          nearest = name;
+        }
+      }
+      return nearest;
     }
 
     document.getElementById('go').addEventListener('click', async () => {
@@ -135,52 +114,91 @@
 
       try {
         // Geocode destination
-        const geoRes = await fetch(https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${mapboxgl.accessToken});
+        const geoRes = await fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(place)}.json?access_token=${mapboxgl.accessToken}`);
         const geoData = await geoRes.json();
 
         if (!geoData.features.length) return alert('Place not found');
 
         const dest = geoData.features[0].geometry.coordinates;
 
-        // Place or move red destination marker
+        // Place or move destination marker
         if (!destMarker) {
           destMarker = new mapboxgl.Marker({ color: 'red' }).setLngLat(dest).addTo(map);
         } else {
           destMarker.setLngLat(dest);
         }
 
-        // Start coords from user or default Kochi
+        // Start coords: user location or default Kochi
         const start = userMarker ? userMarker.getLngLat().toArray() : [76.2673, 9.9312];
 
-        // Decide radius (km) based on mode
-        let radiusKm = 5;
-        if (mode === 'snail') radiusKm = 30;
-        else if (mode === 'tractor') radiusKm = 15;
-        else if (mode === 'looping') radiusKm = 10;
+        // Routing profile (walking for snail, driving otherwise)
+        let profile = mode === 'snail' ? 'walking' : 'driving';
 
-        // Search for nearby POIs around destination
-        const pois = await searchNearbyPOIs(dest, radiusKm);
+        let waypoints = [];
 
-        // Pick one POI randomly as intermediate waypoint (or none if empty)
-        let waypoint = null;
-        if (pois.length > 0) {
-          waypoint = pois[Math.floor(Math.random() * pois.length)].geometry.coordinates;
-          console.log('Picked waypoint:', waypoint);
-        } else {
-          console.log('No nearby POIs found in radius', radiusKm, 'km');
+        if (mode === 'snail') {
+          // Check if start is near Kothamangalam & destination near Munnar to apply custom waypoint chain
+          const startNear = findNearestMajorPlace(start);
+          const destNear = findNearestMajorPlace(dest);
+
+          if (startNear === 'Kothamangalam' && destNear === 'Munnar') {
+            // Fixed waypoint chain for snail mode (order important)
+            waypoints = [
+              majorPlaces.Perumbavoor,
+              majorPlaces.Muvattupuzha,
+              majorPlaces.Thodupuzha,
+              majorPlaces.Neriyamangalam
+            ];
+            console.log('Snail mode: Using fixed waypoint chain for Kothamangalam -> Munnar');
+          } else {
+            // Default snail: pick waypoint ~30km from start if available
+            // (Reuse previous logic: find nearest waypoint ~30km away)
+            // We'll pick one waypoint near 30 km radius for demo:
+            for (const [name, coords] of Object.entries(majorPlaces)) {
+              const dist = distanceBetween(start, coords);
+              if (dist >= 25 && dist <= 35) {
+                waypoints.push(coords);
+                break;
+              }
+            }
+            if (waypoints.length === 0) {
+              console.log('Snail mode: no suitable waypoint ~30km found, using direct route');
+            }
+          }
+        } else if (mode === 'tractor') {
+          // Tractor mode example waypoint ~15km away
+          for (const [name, coords] of Object.entries(majorPlaces)) {
+            const dist = distanceBetween(start, coords);
+            if (dist >= 10 && dist <= 20) {
+              waypoints.push(coords);
+              break;
+            }
+          }
+        } else if (mode === 'looping') {
+          // Looping mode: visit 2 places then return to start then destination
+          let count = 0;
+          for (const [name, coords] of Object.entries(majorPlaces)) {
+            if (count >= 2) break;
+            const distStart = distanceBetween(start, coords);
+            const distDest = distanceBetween(coords, dest);
+            const directDist = distanceBetween(start, dest);
+            if (distStart + distDest > directDist + 5 && distStart + distDest < directDist + 40) {
+              waypoints.push(coords);
+              count++;
+            }
+          }
+          waypoints.push(start);
         }
+        // Normal mode: no waypoints
 
-        // Route profile for directions
-        let profile = 'driving';
-        if (mode === 'snail') profile = 'walking';
+        // Build directions coordinates string
+        let coordsString = `${start[0]},${start[1]}`;
+        waypoints.forEach(wp => {
+          coordsString += `;${wp[0]},${wp[1]}`;
+        });
+        coordsString += `;${dest[0]},${dest[1]}`;
 
-        // Build directions URL with waypoint if exists
-        // Format: start;waypoint;destination
-        let coordsString = ${start[0]},${start[1]};
-        if (waypoint) coordsString += ;${waypoint[0]},${waypoint[1]};
-        coordsString += ;${dest[0]},${dest[1]};
-
-        const directionsUrl = https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken};
+        const directionsUrl = `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
 
         const dirRes = await fetch(directionsUrl);
         const dirData = await dirRes.json();
@@ -193,13 +211,13 @@
           return alert('Route geometry invalid or empty');
         }
 
-        // Remove old route
+        // Remove old route layer if exists
         if (map.getLayer(routeLayerId)) {
           map.removeLayer(routeLayerId);
           map.removeSource(routeLayerId);
         }
 
-        // Paint styles for mode
+        // Paint styles per mode
         let paint = {
           'line-color': '#ff0000',
           'line-width': 4,
@@ -218,6 +236,7 @@
           paint['line-opacity'] = 0.7;
         }
 
+        // Add route to map
         map.addSource(routeLayerId, {
           type: 'geojson',
           data: {
@@ -234,26 +253,20 @@
           paint: paint
         });
 
-        // Fit map to route bounds
+        // Fit map bounds to route
         const bounds = new mapboxgl.LngLatBounds();
         route.coordinates.forEach(c => bounds.extend(c));
-        map.fitBounds(bounds, { padding: 50 });
+        map.fitBounds(bounds, { padding: 50, maxZoom: 14 });
 
-        // Optional: add a marker for intermediate waypoint
-        if (waypoint) {
-          if (window.waypointMarker) {
-            window.waypointMarker.setLngLat(waypoint);
-          } else {
-            window.waypointMarker = new mapboxgl.Marker({ color: 'yellow' }).setLngLat(waypoint).addTo(map);
-          }
-        } else if (window.waypointMarker) {
+        // Only start (blue) and destination (red) markers - no waypoint markers
+        if (window.waypointMarker) {
           window.waypointMarker.remove();
           window.waypointMarker = null;
         }
 
       } catch (error) {
-        console.error('Error getting route:', error);
-        alert('Error getting route: ' + error.message);
+        console.error('Error:', error);
+        alert('Error: ' + error.message);
       }
     });
   </script>
